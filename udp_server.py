@@ -82,52 +82,73 @@ class UDPRelayServer:
             # 最简单的逻辑是：一局游戏结束，双方都需要重新匹配
 
     def run(self):
+        print("服务器主循环已启动...")
         while True:
             try:
                 data, addr = self.sock.recvfrom(4096)
                 
-                # 更新心跳
+                # 更新活跃时间
                 self.last_active[addr] = time.time()
                 
-                # 解析消息类型（如果是JSON）
-                msg_type = ""
+                # 尝试解析消息
+                msg_obj = {}
                 try:
                     if data.startswith(b"{"):
                         msg_obj = json.loads(data.decode())
-                        msg_type = msg_obj.get("type")
                 except:
                     pass
 
-                # === 逻辑 1: 心跳包 ===
-                if msg_type == "HEARTBEAT":
-                    # 仅更新时间，不做转发
-                    continue
+                # === 1. 心跳包处理 ===
+                if msg_obj.get("type") == "HEARTBEAT":
+                    # 如果已经在游戏中 (sesssions中)，且收到心跳，
+                    # 可以在这里补发 GAME_START 以防丢包（可选优化），这里暂不实现以保持简洁
+                    pass
 
-                # === 逻辑 2: 匹配/转发 ===
+                # === 2. 转发逻辑 (如果在游戏中) ===
                 if addr in self.sessions:
-                    # 已在房间中，直接转发
                     target = self.sessions[addr]
+                    # 直接转发原始数据
                     self.sock.sendto(data, target)
                 
+                # === 3. 匹配逻辑 (如果不在游戏中且不在队列中) ===
                 elif addr not in self.waiting_queue:
-                    # 新玩家，加入队列
-                    print(f"新玩家进入队列: {addr}")
+                    print(f"新玩家加入匹配队列: {addr}")
                     self.waiting_queue.append(addr)
                     
-                    # 尝试匹配
+                    # 检查队列是否满足匹配条件
                     if len(self.waiting_queue) >= 2:
-                        p1 = self.waiting_queue.pop(0)
-                        p2 = self.waiting_queue.pop(0)
-                        
-                        # 建立双向映射
-                        self.sessions[p1] = p2
-                        self.sessions[p2] = p1
-                        print(f"匹配成功: {p1} <--> {p2}")
-                        
-                        # 可选：通知双方匹配成功（BattleApp的握手会处理，这里只需打通）
+                        self.match_players()
 
             except Exception as e:
                 print(f"服务器错误: {e}")
+
+    def match_players(self):
+        """执行匹配并分配红蓝方"""
+        p1 = self.waiting_queue.pop(0)
+        p2 = self.waiting_queue.pop(0)
+        
+        # 建立双向会话映射
+        self.sessions[p1] = p2
+        self.sessions[p2] = p1
+        print(f"匹配成功: {p1} <--> {p2}")
+
+        # === 随机分配红蓝方 ===
+        # True 代表 Host (Blue/先手), False 代表 Client (Red/后手)
+        # random.choice 随机决定 p1 是先手还是后手
+        p1_is_host = random.choice([True, False])
+        p2_is_host = not p1_is_host
+
+        # === 发送开始指令 ===
+        # 构造 JSON 消息
+        msg_p1 = json.dumps({"type": "GAME_START", "is_host": p1_is_host}).encode()
+        msg_p2 = json.dumps({"type": "GAME_START", "is_host": p2_is_host}).encode()
+
+        try:
+            self.sock.sendto(msg_p1, p1)
+            self.sock.sendto(msg_p2, p2)
+            print(f"已下发身份: {p1}={'蓝方' if p1_is_host else '红方'}, {p2}={'蓝方' if p2_is_host else '红方'}")
+        except Exception as e:
+            print(f"下发身份失败: {e}")
 
 if __name__ == "__main__":
     load_config()
