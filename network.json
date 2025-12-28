@@ -1,6 +1,6 @@
 {
     "server_ip": "124.223.219.243",
-    "server_port": 8888,
+    "server_port": 10000,
     "relay_ip": "124.223.219.243",
     "relay_port": 10000,
     "heartbeat_interval": 3,
