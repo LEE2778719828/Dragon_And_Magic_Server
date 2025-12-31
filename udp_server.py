@@ -103,9 +103,12 @@ class UDPRelayServer:
                     # 如果已经在游戏中 (sesssions中)，且收到心跳，
                     # 可以在这里补发 GAME_START 以防丢包（可选优化），这里暂不实现以保持简洁
                     pass
+                
+                elif msg_obj.get("type") == "SURRENDER":
+                    self.handle_disconnect(addr)
 
                 # === 2. 转发逻辑 (如果在游戏中) ===
-                if addr in self.sessions:
+                elif addr in self.sessions:
                     target = self.sessions[addr]
                     # 直接转发原始数据
                     self.sock.sendto(data, target)
